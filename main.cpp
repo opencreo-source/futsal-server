@@ -251,7 +251,8 @@ int main() {
         addCors(res);
         return res;
     });
-        // ===== 관리자 비밀번호 확인 (부작용 없음) =====
+
+    // ===== 관리자 비밀번호 확인 (부작용 없음) =====
     CROW_ROUTE(app, "/admin/verify").methods("POST"_method, "OPTIONS"_method)
     ([](const crow::request& req){
         if (req.method == crow::HTTPMethod::OPTIONS) {
@@ -267,12 +268,13 @@ int main() {
         }
         string password = body["password"].s();
         crow::json::wvalue result;
-        result["success"] = (password == "futsal2026");
+        result["success"] = (password == "omt_forever");
         crow::response res(result);
         res.set_header("Content-Type", "application/json; charset=utf-8");
         addCors(res);
         return res;
     });
+
     // ===== 매치 등록 =====
     CROW_ROUTE(app, "/match/add").methods("POST"_method, "OPTIONS"_method)
     ([](const crow::request& req){
@@ -289,7 +291,7 @@ int main() {
         }
 
         string password = body["password"].s();
-        if (password != "futsal2026") {
+        if (password != "omt_forever") {
             crow::json::wvalue fail;
             fail["success"] = false;
             crow::response res(403, fail);
@@ -352,7 +354,7 @@ int main() {
         }
 
         string password = body["password"].s();
-        if (password != "futsal2026") {
+        if (password != "omt_forever") {
             crow::json::wvalue fail;
             fail["success"] = false;
             fail["message"] = "관리자 비밀번호가 틀렸습니다.";
@@ -420,7 +422,7 @@ int main() {
         }
 
         string password = body["password"].s();
-        if (password != "futsal2026") {
+        if (password != "omt_forever") {
             crow::json::wvalue fail;
             fail["success"] = false;
             crow::response res(403, fail);
@@ -462,7 +464,7 @@ int main() {
         }
 
         string password = body["password"].s();
-        if (password != "futsal2026") {
+        if (password != "omt_forever") {
             crow::json::wvalue fail;
             fail["success"] = false;
             crow::response res(403, fail);
@@ -513,7 +515,7 @@ int main() {
         }
 
         string password = body["password"].s();
-        if (password != "futsal2026") {
+        if (password != "omt_forever") {
             crow::json::wvalue fail;
             fail["success"] = false;
             crow::response res(403, fail);
@@ -557,7 +559,7 @@ int main() {
         }
 
         string password = body["password"].s();
-        if (password != "futsal2026") {
+        if (password != "omt_forever") {
             crow::json::wvalue fail;
             fail["success"] = false;
             crow::response res(403, fail);
@@ -607,7 +609,7 @@ int main() {
         }
 
         string password = body["password"].s();
-        if (password != "futsal2026") {
+        if (password != "omt_forever") {
             crow::json::wvalue fail;
             fail["success"] = false;
             crow::response res(403, fail);
@@ -656,7 +658,7 @@ int main() {
         }
 
         string password = body["password"].s();
-        if (password != "futsal2026") {
+        if (password != "omt_forever") {
             crow::json::wvalue fail;
             fail["success"] = false;
             crow::response res(403, fail);
