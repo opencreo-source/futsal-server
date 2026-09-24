@@ -82,6 +82,14 @@ vector<Match> loadMatches() {
     return matches;
 }
 
+void saveMatches(vector<Match>& matches) {
+    ofstream outFile("matches.txt");
+    for (int i = 0; i < matches.size(); i++) {
+        outFile << matches[i].date << "," << matches[i].time << "," << matches[i].location << endl;
+    }
+    outFile.close();
+}
+
 string getToday() {
     time_t now = time(0);
     tm* ltm = localtime(&now);
@@ -238,6 +246,48 @@ int main() {
         result["date"] = next.date;
         result["time"] = next.time;
         result["location"] = next.location;
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
+
+    // ===== 매치 등록 =====
+    CROW_ROUTE(app, "/match/add").methods("POST"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204);
+            addCors(res);
+            return res;
+        }
+        auto body = crow::json::load(req.body);
+        if (!body) {
+            crow::response res(400);
+            addCors(res);
+            return res;
+        }
+
+        string password = body["password"].s();
+        if (password != "futsal2026") {
+            crow::json::wvalue fail;
+            fail["success"] = false;
+            crow::response res(403, fail);
+            res.set_header("Content-Type", "application/json; charset=utf-8");
+            addCors(res);
+            return res;
+        }
+
+        Match newMatch;
+        newMatch.date = body["date"].s();
+        newMatch.time = body["time"].s();
+        newMatch.location = body["location"].s();
+
+        vector<Match> matches = loadMatches();
+        matches.push_back(newMatch);
+        saveMatches(matches);
+
+        crow::json::wvalue result;
+        result["success"] = true;
         crow::response res(result);
         res.set_header("Content-Type", "application/json; charset=utf-8");
         addCors(res);
