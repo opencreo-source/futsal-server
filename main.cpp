@@ -251,7 +251,28 @@ int main() {
         addCors(res);
         return res;
     });
-
+        // ===== 관리자 비밀번호 확인 (부작용 없음) =====
+    CROW_ROUTE(app, "/admin/verify").methods("POST"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204);
+            addCors(res);
+            return res;
+        }
+        auto body = crow::json::load(req.body);
+        if (!body) {
+            crow::response res(400);
+            addCors(res);
+            return res;
+        }
+        string password = body["password"].s();
+        crow::json::wvalue result;
+        result["success"] = (password == "futsal2026");
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
     // ===== 매치 등록 =====
     CROW_ROUTE(app, "/match/add").methods("POST"_method, "OPTIONS"_method)
     ([](const crow::request& req){
