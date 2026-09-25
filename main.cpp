@@ -171,6 +171,33 @@ void saveVideoLinks(vector<VideoLink>& links) {
     outFile.close();
 }
 
+struct Notice {
+    string date;
+    string content;
+};
+
+vector<Notice> loadNotices() {
+    vector<Notice> notices;
+    ifstream inFile("notices.txt");
+    string line;
+    while (getline(inFile, line)) {
+        stringstream ss(line);
+        Notice n;
+        getline(ss, n.date, ',');
+        getline(ss, n.content);
+        notices.push_back(n);
+    }
+    return notices;
+}
+
+void saveNotices(vector<Notice>& notices) {
+    ofstream outFile("notices.txt");
+    for (int i = 0; i < notices.size(); i++) {
+        outFile << notices[i].date << "," << notices[i].content << endl;
+    }
+    outFile.close();
+}
+
 // ===== CORS 허용 헤더를 모든 응답에 붙여주는 함수 =====
 void addCors(crow::response& res) {
     res.set_header("Access-Control-Allow-Origin", "*");
@@ -269,6 +296,70 @@ int main() {
         string password = body["password"].s();
         crow::json::wvalue result;
         result["success"] = (password == "omt_forever");
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
+
+    // ===== 공지사항 조회 (전체, 최신순) =====
+    CROW_ROUTE(app, "/notices").methods("GET"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204);
+            addCors(res);
+            return res;
+        }
+        vector<Notice> notices = loadNotices();
+        crow::json::wvalue result;
+        result["notices"] = crow::json::wvalue::list();
+        int idx = 0;
+        for (int i = (int)notices.size() - 1; i >= 0; i--) {
+            result["notices"][idx]["date"] = notices[i].date;
+            result["notices"][idx]["content"] = notices[i].content;
+            idx++;
+        }
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
+
+    // ===== 공지사항 등록 (관리자 전용) =====
+    CROW_ROUTE(app, "/notices/add").methods("POST"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204);
+            addCors(res);
+            return res;
+        }
+        auto body = crow::json::load(req.body);
+        if (!body) {
+            crow::response res(400);
+            addCors(res);
+            return res;
+        }
+
+        string password = body["password"].s();
+        if (password != "omt_forever") {
+            crow::json::wvalue fail;
+            fail["success"] = false;
+            crow::response res(403, fail);
+            res.set_header("Content-Type", "application/json; charset=utf-8");
+            addCors(res);
+            return res;
+        }
+
+        Notice newNotice;
+        newNotice.date = body["date"].s();
+        newNotice.content = body["content"].s();
+
+        vector<Notice> notices = loadNotices();
+        notices.push_back(newNotice);
+        saveNotices(notices);
+
+        crow::json::wvalue result;
+        result["success"] = true;
         crow::response res(result);
         res.set_header("Content-Type", "application/json; charset=utf-8");
         addCors(res);
