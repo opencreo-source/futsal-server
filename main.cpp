@@ -176,6 +176,28 @@ struct Notice {
     string content;
 };
 
+string escapeNewlines(string s) {
+    string result;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\n') result += "\\n";
+        else result += s[i];
+    }
+    return result;
+}
+
+string unescapeNewlines(string s) {
+    string result;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\' && i + 1 < s.size() && s[i+1] == 'n') {
+            result += '\n';
+            i++;
+        } else {
+            result += s[i];
+        }
+    }
+    return result;
+}
+
 vector<Notice> loadNotices() {
     vector<Notice> notices;
     ifstream inFile("notices.txt");
@@ -183,8 +205,10 @@ vector<Notice> loadNotices() {
     while (getline(inFile, line)) {
         stringstream ss(line);
         Notice n;
+        string rawContent;
         getline(ss, n.date, ',');
-        getline(ss, n.content);
+        getline(ss, rawContent);
+        n.content = unescapeNewlines(rawContent);
         notices.push_back(n);
     }
     return notices;
@@ -193,7 +217,7 @@ vector<Notice> loadNotices() {
 void saveNotices(vector<Notice>& notices) {
     ofstream outFile("notices.txt");
     for (int i = 0; i < notices.size(); i++) {
-        outFile << notices[i].date << "," << notices[i].content << endl;
+        outFile << notices[i].date << "," << escapeNewlines(notices[i].content) << endl;
     }
     outFile.close();
 }
@@ -315,10 +339,59 @@ int main() {
         result["notices"] = crow::json::wvalue::list();
         int idx = 0;
         for (int i = (int)notices.size() - 1; i >= 0; i--) {
+            result["notices"][idx]["id"] = i;
             result["notices"][idx]["date"] = notices[i].date;
             result["notices"][idx]["content"] = notices[i].content;
             idx++;
         }
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
+
+    // ===== 공지사항 삭제 (관리자 전용) =====
+    CROW_ROUTE(app, "/notices/delete").methods("POST"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204);
+            addCors(res);
+            return res;
+        }
+        auto body = crow::json::load(req.body);
+        if (!body) {
+            crow::response res(400);
+            addCors(res);
+            return res;
+        }
+
+        string password = body["password"].s();
+        if (password != "omt_forever") {
+            crow::json::wvalue fail;
+            fail["success"] = false;
+            crow::response res(403, fail);
+            res.set_header("Content-Type", "application/json; charset=utf-8");
+            addCors(res);
+            return res;
+        }
+
+        int id = body["id"].i();
+        vector<Notice> notices = loadNotices();
+
+        if (id < 0 || id >= (int)notices.size()) {
+            crow::json::wvalue fail;
+            fail["success"] = false;
+            crow::response res(404, fail);
+            res.set_header("Content-Type", "application/json; charset=utf-8");
+            addCors(res);
+            return res;
+        }
+
+        notices.erase(notices.begin() + id);
+        saveNotices(notices);
+
+        crow::json::wvalue result;
+        result["success"] = true;
         crow::response res(result);
         res.set_header("Content-Type", "application/json; charset=utf-8");
         addCors(res);
