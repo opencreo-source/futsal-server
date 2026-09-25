@@ -638,7 +638,7 @@ int main() {
         }
 
         string targetName = body["name"].s();
-        int newPoints = body["points"].i();
+        string mode = body["mode"].s();
         vector<Member> members = loadMembers();
         int idx = findMemberIndex(members, targetName);
 
@@ -652,7 +652,12 @@ int main() {
             return res;
         }
 
-        members[idx].points = newPoints;
+        if (mode == "reset") {
+            members[idx].points = 0;
+        } else {
+            int delta = body["value"].i();
+            members[idx].points += delta;
+        }
         saveMembers(members);
 
         crow::json::wvalue result;
