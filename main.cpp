@@ -714,6 +714,41 @@ int main() {
         return res;
     });
 
+    // ===== 회원 전체 목록 (이름/레벨/포인트만, 생년월일 제외) =====
+    CROW_ROUTE(app, "/member/list").methods("POST"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204); addCors(res); return res;
+        }
+        auto body = crow::json::load(req.body);
+        if (!body) { crow::response res(400); addCors(res); return res; }
+
+        string password = body["password"].s();
+        if (password != "omt_forever") {
+            crow::json::wvalue fail; fail["success"] = false;
+            crow::response res(403, fail);
+            res.set_header("Content-Type", "application/json; charset=utf-8");
+            addCors(res); return res;
+        }
+
+        vector<Member> members = loadMembers();
+        sort(members.begin(), members.end(), [](const Member& a, const Member& b){
+            return a.points > b.points;
+        });
+
+        crow::json::wvalue result;
+        result["members"] = crow::json::wvalue::list();
+        for (int i = 0; i < (int)members.size(); i++) {
+            result["members"][i]["name"] = members[i].name;
+            result["members"][i]["skillLevel"] = members[i].skillLevel;
+            result["members"][i]["points"] = members[i].points;
+        }
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
+
     // ===== 팀 자동 배정 =====
     CROW_ROUTE(app, "/team/assign").methods("POST"_method, "OPTIONS"_method)
     ([](const crow::request& req){
