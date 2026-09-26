@@ -975,10 +975,12 @@ int main() {
         if (!body) { crow::response res(400); addCors(res); return res; }
 
         int id = body["id"].i();
+        int delta = body.has("delta") ? body["delta"].i() : 1;
         auto parsed = crow::json::load(sbGet("gallery?id=eq." + to_string(id) + "&select=likes"));
         int currentLikes = 0;
         if (parsed && parsed.size() > 0) currentLikes = parsed[0]["likes"].i();
-        int newLikes = currentLikes + 1;
+        int newLikes = currentLikes + delta;
+        if (newLikes < 0) newLikes = 0;
 
         crow::json::wvalue patch;
         patch["likes"] = newLikes;
