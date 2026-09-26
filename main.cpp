@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <unistd.h>
 #include <array>
+#include <cctype>
 
 using namespace std;
 
@@ -48,6 +49,71 @@ string urlEncode(const string& s) {
         }
     }
     return result;
+}
+
+string writeTempBinary(const string& data) {
+    char templ[] = "/tmp/imgXXXXXX";
+    int fd = mkstemp(templ);
+    if (fd == -1) return "";
+    FILE* f = fdopen(fd, "wb");
+    fwrite(data.data(), 1, data.size(), f);
+    fclose(f);
+    return string(templ);
+}
+
+static const string base64_chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789+/";
+
+string base64Decode(const string& encoded_string) {
+    auto is_base64 = [](unsigned char c) {
+        return (isalnum(c) || (c == '+') || (c == '/'));
+    };
+    int in_len = encoded_string.size();
+    int i = 0, j = 0, in_ = 0;
+    unsigned char char_array_4[4], char_array_3[3];
+    string ret;
+
+    while (in_len-- && (encoded_string[in_] != '=') && is_base64(encoded_string[in_])) {
+        char_array_4[i++] = encoded_string[in_]; in_++;
+        if (i == 4) {
+            for (i = 0; i < 4; i++) char_array_4[i] = base64_chars.find(char_array_4[i]);
+            char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+            char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+            char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+            for (i = 0; i < 3; i++) ret += char_array_3[i];
+            i = 0;
+        }
+    }
+    if (i) {
+        for (j = i; j < 4; j++) char_array_4[j] = 0;
+        for (j = 0; j < 4; j++) char_array_4[j] = base64_chars.find(char_array_4[j]);
+        char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+        char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+        char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+        for (j = 0; j < i - 1; j++) ret += char_array_3[j];
+    }
+    return ret;
+}
+
+bool sbStorageUpload(const string& path, const string& binaryData, const string& contentType) {
+    string tmp = writeTempBinary(binaryData);
+    string cmd = "curl -s -X POST \"" + SUPABASE_URL + "/storage/v1/object/gallery-photos/" + path + "\" "
+        "-H \"apikey: " + SUPABASE_KEY + "\" "
+        "-H \"Authorization: Bearer " + SUPABASE_KEY + "\" "
+        "-H \"Content-Type: " + contentType + "\" "
+        "--data-binary @" + tmp;
+    string res = execCmd(cmd);
+    remove(tmp.c_str());
+    return res.find("error") == string::npos && res.find("Error") == string::npos;
+}
+
+void sbStorageDelete(const string& path) {
+    string cmd = "curl -s -X DELETE \"" + SUPABASE_URL + "/storage/v1/object/gallery-photos/" + path + "\" "
+        "-H \"apikey: " + SUPABASE_KEY + "\" "
+        "-H \"Authorization: Bearer " + SUPABASE_KEY + "\"";
+    execCmd(cmd);
 }
 
 string sbGet(const string& pathWithQuery) {
@@ -192,6 +258,28 @@ vector<Notice> loadNotices() {
         notices.push_back(n);
     }
     return notices;
+}
+
+struct GalleryItem {
+    int id;
+    string url;
+    int likes;
+    string date;
+};
+
+vector<GalleryItem> loadGallery() {
+    vector<GalleryItem> items;
+    auto parsed = crow::json::load(sbGet("gallery?select=*&order=id.desc"));
+    if (!parsed) return items;
+    for (size_t i = 0; i < parsed.size(); i++) {
+        GalleryItem g;
+        g.id = parsed[i]["id"].i();
+        g.url = parsed[i]["url"].s();
+        g.likes = parsed[i]["likes"].i();
+        g.date = parsed[i]["date"].s();
+        items.push_back(g);
+    }
+    return items;
 }
 
 // ===== 유틸 =====
@@ -801,6 +889,141 @@ int main() {
         result["teamB"] = crow::json::wvalue::list();
         for (size_t i = 0; i < teamB.size(); i++) result["teamB"][i] = teamB[i].name;
 
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
+
+    // ===== 갤러리 조회 =====
+    CROW_ROUTE(app, "/gallery").methods("GET"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204); addCors(res); return res;
+        }
+        vector<GalleryItem> items = loadGallery();
+        crow::json::wvalue result;
+        result["items"] = crow::json::wvalue::list();
+        for (size_t i = 0; i < items.size(); i++) {
+            result["items"][i]["id"] = items[i].id;
+            result["items"][i]["url"] = items[i].url;
+            result["items"][i]["likes"] = items[i].likes;
+            result["items"][i]["date"] = items[i].date;
+        }
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
+
+    // ===== 갤러리 사진 업로드 (관리자 전용) =====
+    CROW_ROUTE(app, "/gallery/add").methods("POST"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204); addCors(res); return res;
+        }
+        auto body = crow::json::load(req.body);
+        if (!body) { crow::response res(400); addCors(res); return res; }
+
+        string password = body["password"].s();
+        if (password != "omt_forever") {
+            crow::json::wvalue fail; fail["success"] = false;
+            crow::response res(403, fail);
+            res.set_header("Content-Type", "application/json; charset=utf-8");
+            addCors(res); return res;
+        }
+
+        string base64Data = body["imageBase64"].s();
+        string mimeType = body["mimeType"].s();
+        string ext = "jpg";
+        if (mimeType.find("png") != string::npos) ext = "png";
+        else if (mimeType.find("webp") != string::npos) ext = "webp";
+        else if (mimeType.find("gif") != string::npos) ext = "gif";
+
+        string binaryData = base64Decode(base64Data);
+        string filename = "photo_" + to_string(time(0)) + "_" + to_string(rand()) + "." + ext;
+        bool uploadOk = sbStorageUpload(filename, binaryData, mimeType);
+
+        if (!uploadOk) {
+            crow::json::wvalue fail; fail["success"] = false;
+            crow::response res(500, fail);
+            res.set_header("Content-Type", "application/json; charset=utf-8");
+            addCors(res); return res;
+        }
+
+        string publicUrl = SUPABASE_URL + "/storage/v1/object/public/gallery-photos/" + filename;
+        crow::json::wvalue row;
+        row["url"] = publicUrl;
+        row["likes"] = 0;
+        row["date"] = getToday();
+        sbPost("gallery", "[" + row.dump() + "]");
+
+        crow::json::wvalue result; result["success"] = true;
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
+
+    // ===== 갤러리 좋아요 (누구나 가능) =====
+    CROW_ROUTE(app, "/gallery/like").methods("POST"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204); addCors(res); return res;
+        }
+        auto body = crow::json::load(req.body);
+        if (!body) { crow::response res(400); addCors(res); return res; }
+
+        int id = body["id"].i();
+        auto parsed = crow::json::load(sbGet("gallery?id=eq." + to_string(id) + "&select=likes"));
+        int currentLikes = 0;
+        if (parsed && parsed.size() > 0) currentLikes = parsed[0]["likes"].i();
+        int newLikes = currentLikes + 1;
+
+        crow::json::wvalue patch;
+        patch["likes"] = newLikes;
+        sbPatch("gallery?id=eq." + to_string(id), patch.dump());
+
+        crow::json::wvalue result;
+        result["success"] = true;
+        result["likes"] = newLikes;
+        crow::response res(result);
+        res.set_header("Content-Type", "application/json; charset=utf-8");
+        addCors(res);
+        return res;
+    });
+
+    // ===== 갤러리 삭제 (관리자 전용) =====
+    CROW_ROUTE(app, "/gallery/delete").methods("POST"_method, "OPTIONS"_method)
+    ([](const crow::request& req){
+        if (req.method == crow::HTTPMethod::OPTIONS) {
+            crow::response res(204); addCors(res); return res;
+        }
+        auto body = crow::json::load(req.body);
+        if (!body) { crow::response res(400); addCors(res); return res; }
+
+        string password = body["password"].s();
+        if (password != "omt_forever") {
+            crow::json::wvalue fail; fail["success"] = false;
+            crow::response res(403, fail);
+            res.set_header("Content-Type", "application/json; charset=utf-8");
+            addCors(res); return res;
+        }
+
+        int id = body["id"].i();
+        auto parsed = crow::json::load(sbGet("gallery?id=eq." + to_string(id) + "&select=url"));
+        if (parsed && parsed.size() > 0) {
+            string url = parsed[0]["url"].s();
+            string marker = "/public/gallery-photos/";
+            size_t pos = url.find(marker);
+            if (pos != string::npos) {
+                string path = url.substr(pos + marker.size());
+                sbStorageDelete(path);
+            }
+        }
+        sbDelete("gallery?id=eq." + to_string(id));
+
+        crow::json::wvalue result; result["success"] = true;
         crow::response res(result);
         res.set_header("Content-Type", "application/json; charset=utf-8");
         addCors(res);
